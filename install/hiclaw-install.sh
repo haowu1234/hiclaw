@@ -23,6 +23,8 @@
 #   HICLAW_MOUNT_SOCKET       Mount container runtime socket (default: 1)
 #   HICLAW_DATA_DIR           Host directory for persistent data (default: docker volume)
 #   HICLAW_VERSION            Image tag            (default: latest)
+#   HICLAW_PORT_GATEWAY       Host port for Higress gateway (default: 8080)
+#   HICLAW_PORT_CONSOLE       Host port for Higress console (default: 8001)
 
 set -e
 
@@ -180,6 +182,13 @@ install_manager() {
 
     log ""
 
+    # Port Configuration
+    log "--- Port Configuration (press Enter for defaults) ---"
+    prompt HICLAW_PORT_GATEWAY "Host port for gateway (8080 inside container)" "8080"
+    prompt HICLAW_PORT_CONSOLE "Host port for Higress console (8001 inside container)" "8001"
+
+    log ""
+
     # Data persistence
     log "--- Data Persistence ---"
     if [ "${HICLAW_NON_INTERACTIVE}" != "1" ] && [ -z "${HICLAW_DATA_DIR+x}" ]; then
@@ -242,6 +251,10 @@ HICLAW_GITHUB_TOKEN=${HICLAW_GITHUB_TOKEN:-}
 # Worker image (for direct container creation)
 HICLAW_WORKER_IMAGE=hiclaw/worker-agent:${HICLAW_VERSION}
 
+# Host ports
+HICLAW_PORT_GATEWAY=${HICLAW_PORT_GATEWAY}
+HICLAW_PORT_CONSOLE=${HICLAW_PORT_CONSOLE}
+
 # Data persistence
 HICLAW_DATA_DIR=${HICLAW_DATA_DIR:-}
 EOF
@@ -281,12 +294,8 @@ EOF
         --name hiclaw-manager \
         --env-file "${ENV_FILE}" \
         ${SOCKET_MOUNT_ARGS} \
-        -p 8080:8080 \
-        -p 8001:8001 \
-        -p 9001:9001 \
-        -p 6167:6167 \
-        -p 8088:8088 \
-        -p 9000:9000 \
+        -p "${HICLAW_PORT_GATEWAY}:8080" \
+        -p "${HICLAW_PORT_CONSOLE}:8001" \
         ${DATA_MOUNT_ARGS} \
         --restart unless-stopped \
         "${MANAGER_IMAGE}"
@@ -299,9 +308,8 @@ EOF
     log "  Password: ${HICLAW_ADMIN_PASSWORD}"
     log ""
     log "--- Access URLs ---"
-    log "  Element Web (IM Client): http://${HICLAW_MATRIX_CLIENT_DOMAIN}:8080"
-    log "  Higress Console:         http://localhost:8001"
-    log "  MinIO Console:           http://localhost:9001"
+    log "  Element Web (IM Client): http://${HICLAW_MATRIX_CLIENT_DOMAIN}:${HICLAW_PORT_GATEWAY}"
+    log "  Higress Console:         http://localhost:${HICLAW_PORT_CONSOLE}"
     log ""
     log "IMPORTANT: Add the following to your /etc/hosts file:"
     log "  127.0.0.1 ${HICLAW_MATRIX_DOMAIN%%:*} ${HICLAW_MATRIX_CLIENT_DOMAIN} ${HICLAW_AI_GATEWAY_DOMAIN} ${HICLAW_FS_DOMAIN}"

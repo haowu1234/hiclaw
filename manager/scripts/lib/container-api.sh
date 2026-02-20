@@ -78,7 +78,7 @@ container_get_manager_ip() {
 }
 
 # Create and start a Worker container
-# Usage: container_create_worker <worker_name> [extra_env_json]
+# Usage: container_create_worker <worker_name> [fs_access_key] [fs_secret_key]
 # Returns: container ID on success, empty on failure
 container_create_worker() {
     local worker_name="$1"
@@ -92,9 +92,9 @@ container_create_worker() {
     fi
 
     # Build environment variables for the Worker
-    local fs_endpoint="http://${manager_ip}:9000"
-    local fs_access_key="${HICLAW_MINIO_USER:-${HICLAW_ADMIN_USER:-admin}}"
-    local fs_secret_key="${HICLAW_MINIO_PASSWORD:-${HICLAW_ADMIN_PASSWORD:-admin}}"
+    local fs_endpoint="http://${HICLAW_FS_DOMAIN:-fs-local.hiclaw.io}:8080"
+    local fs_access_key="${2:-${HICLAW_MINIO_USER:-${HICLAW_ADMIN_USER:-admin}}}"
+    local fs_secret_key="${3:-${HICLAW_MINIO_PASSWORD:-${HICLAW_ADMIN_PASSWORD:-admin}}}"
 
     # Build ExtraHosts for local domains (*-local.hiclaw.io) that need
     # in-container resolution back to the Manager. Skip if user provides

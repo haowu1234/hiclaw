@@ -107,10 +107,10 @@ higress_api POST /v1/routes "Creating Element Web route" \
     '{"name":"matrix-web-client","domains":["'"${MATRIX_CLIENT_DOMAIN}"'"],"path":{"matchType":"PRE","matchValue":"/"},"services":[{"name":"element-web.static","port":8088,"weight":100}]}'
 
 # ============================================================
-# 4. HTTP File System Route (auth required)
+# 4. HTTP File System Route (no auth - protected by MinIO S3 auth)
 # ============================================================
 higress_api POST /v1/routes "Creating HTTP file system route" \
-    '{"name":"http-filesystem","domains":["'"${FS_DOMAIN}"'"],"path":{"matchType":"PRE","matchValue":"/"},"services":[{"name":"minio.static","port":9000,"weight":100}],"authConfig":{"enabled":true,"allowedCredentialTypes":["key-auth"],"allowedConsumers":["manager"]}}'
+    '{"name":"http-filesystem","domains":["'"${FS_DOMAIN}"'"],"path":{"matchType":"PRE","matchValue":"/"},"services":[{"name":"minio.static","port":9000,"weight":100}]}'
 
 # ============================================================
 # 5. AI Gateway Route (LLM Provider + auth)
@@ -168,20 +168,9 @@ else
 fi
 
 # ============================================================
-# Wait for Auth plugin activation (~40 seconds for first config)
+# Wait for AI plugin activation (~40 seconds for first config)
 # ============================================================
-log "Waiting for Auth plugin activation (40s)..."
+log "Waiting for AI Gateway plugin activation (40s)..."
 sleep 45
-
-# Verify auth is working
-HTTP_CODE=$(curl -s -o /dev/null -w '%{http_code}' \
-    -H "Host: ${FS_DOMAIN}" \
-    http://127.0.0.1:8080/ 2>/dev/null) || true
-
-if [ "${HTTP_CODE}" = "401" ]; then
-    log "Auth plugin activated successfully (got 401 for unauthenticated request)"
-else
-    log "WARNING: Auth plugin may not be active yet (got HTTP ${HTTP_CODE})"
-fi
 
 log "Higress setup complete"

@@ -17,7 +17,7 @@ cat > /opt/element-web/config.json << EOF
 }
 EOF
 
-# Generate Nginx config for Element Web on port 8088
+# Generate Nginx config for Element Web
 cat > /etc/nginx/conf.d/element-web.conf << 'NGINX'
 server {
     listen 8088;

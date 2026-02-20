@@ -104,6 +104,7 @@ if [ -f "${WORKER_CREDS_FILE}" ]; then
 else
     WORKER_PASSWORD=$(generateKey 16)
 fi
+[ -z "${WORKER_MINIO_PASSWORD}" ] && WORKER_MINIO_PASSWORD=$(generateKey 24)
 
 REG_RESP=$(curl -s -X POST http://127.0.0.1:6167/_matrix/client/v3/register \
     -H 'Content-Type: application/json' \
@@ -141,8 +142,50 @@ fi
 # Persist credentials for future re-creation
 cat > "${WORKER_CREDS_FILE}" <<CREDS
 WORKER_PASSWORD="${WORKER_PASSWORD}"
+WORKER_MINIO_PASSWORD="${WORKER_MINIO_PASSWORD}"
 CREDS
 chmod 600 "${WORKER_CREDS_FILE}"
+
+# ============================================================
+# Step 1b: Create MinIO user with restricted permissions
+# ============================================================
+log "Step 1b: Creating MinIO user for ${WORKER_NAME}..."
+POLICY_NAME="worker-${WORKER_NAME}"
+POLICY_FILE=$(mktemp /tmp/minio-policy-XXXXXX.json)
+cat > "${POLICY_FILE}" <<POLICY
+{
+  "Version": "2012-10-17",
+  "Statement": [
+    {
+      "Effect": "Allow",
+      "Action": ["s3:ListBucket"],
+      "Resource": ["arn:aws:s3:::hiclaw-storage"],
+      "Condition": {
+        "StringLike": {
+          "s3:prefix": [
+            "agents/${WORKER_NAME}", "agents/${WORKER_NAME}/*",
+            "shared", "shared/*"
+          ]
+        }
+      }
+    },
+    {
+      "Effect": "Allow",
+      "Action": ["s3:GetObject", "s3:PutObject", "s3:DeleteObject"],
+      "Resource": [
+        "arn:aws:s3:::hiclaw-storage/agents/${WORKER_NAME}/*",
+        "arn:aws:s3:::hiclaw-storage/shared/*"
+      ]
+    }
+  ]
+}
+POLICY
+mc admin user add hiclaw "${WORKER_NAME}" "${WORKER_MINIO_PASSWORD}" 2>/dev/null || true
+mc admin policy remove hiclaw "${POLICY_NAME}" 2>/dev/null || true
+mc admin policy create hiclaw "${POLICY_NAME}" "${POLICY_FILE}"
+mc admin policy attach hiclaw "${POLICY_NAME}" --user "${WORKER_NAME}"
+rm -f "${POLICY_FILE}"
+log "  MinIO user ${WORKER_NAME} created with policy ${POLICY_NAME}"
 
 # ============================================================
 # Step 2: Create Matrix Room (3-party)
@@ -326,9 +369,9 @@ source /opt/hiclaw/scripts/lib/container-api.sh
 _build_install_cmd() {
     local manager_ip
     manager_ip=$(container_get_manager_ip 2>/dev/null || hostname -I 2>/dev/null | awk '{print $1}')
-    local fs_endpoint="http://${manager_ip}:9000"
-    local fs_access_key="${HICLAW_MINIO_USER:-${HICLAW_ADMIN_USER:-admin}}"
-    local fs_secret_key="${HICLAW_MINIO_PASSWORD:-${HICLAW_ADMIN_PASSWORD:-admin}}"
+    local fs_endpoint="http://${HICLAW_FS_DOMAIN:-fs-local.hiclaw.io}:8080"
+    local fs_access_key="${WORKER_NAME}"
+    local fs_secret_key="${WORKER_MINIO_PASSWORD}"
 
     echo "bash hiclaw-install.sh worker --name ${WORKER_NAME} --fs ${fs_endpoint} --fs-key ${fs_access_key} --fs-secret ${fs_secret_key}"
 }
@@ -338,7 +381,7 @@ if [ "${REMOTE_MODE}" = true ]; then
     INSTALL_CMD=$(_build_install_cmd)
 elif container_api_available; then
     log "Step 9: Starting Worker container locally..."
-    CREATE_OUTPUT=$(container_create_worker "${WORKER_NAME}" 2>&1) || true
+    CREATE_OUTPUT=$(container_create_worker "${WORKER_NAME}" "${WORKER_NAME}" "${WORKER_MINIO_PASSWORD}" 2>&1) || true
     CONTAINER_ID=$(echo "${CREATE_OUTPUT}" | tail -1)
     if [ -n "${CONTAINER_ID}" ] && [ ${#CONTAINER_ID} -ge 12 ]; then
         DEPLOY_MODE="local"
