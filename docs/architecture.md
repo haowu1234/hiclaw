@@ -157,6 +157,8 @@ The Manager's own working directory lives on the host and is bind-mounted into t
 ├── worker-lifecycle.json    # Worker container status and idle tracking
 ├── primary-channel.json     # Admin's preferred primary channel for proactive notifications
 ├── trusted-contacts.json    # Non-admin contacts allowed to converse with the Manager
+├── coding-cli-config.json   # Coding CLI delegation config (enabled, cli tool name)
+├── yolo-mode                # If present, enables YOLO mode (autonomous decisions, no admin prompts)
 ├── .session-scan-last-run   # Timestamp of last Matrix session expiry scan
 └── memory/                  # Manager's memory files (MEMORY.md, YYYY-MM-DD.md)
 ```

@@ -295,3 +295,106 @@ echo "Sample data" > ~/project-inputs/sample.txt
 # Host: /home/zhangty/data/input.txt
 # Container: /home/zhangty/data/input.txt (identical path via symlink)
 ```
+
+## Coding CLI Delegation
+
+Coding CLI Delegation lets Workers offload coding tasks (writing code, fixing bugs, implementing features) to a full coding CLI tool — Claude Code, Gemini CLI, or qodercli — running inside the Manager container. This gives Workers access to richer, multi-step code generation that goes beyond a single LLM call.
+
+### How It Works
+
+When the Manager assigns a coding task, it checks `~/manager-workspace/coding-cli-config.json`:
+
+- **Config not found**: runs first-detection automatically (see below)
+- **`enabled: false`**: standard task assignment, no delegation
+- **`enabled: true`**: appends a `## Coding CLI Mode` section to the task's `spec.md`, instructing the Worker to use the `coding-request:`/`coding-result:` protocol
+
+**First-detection** runs the detect script and either auto-selects a tool (YOLO mode) or asks the admin:
+
+```bash
+# Runs automatically on first coding task; or trigger manually:
+docker exec hiclaw-manager \
+  bash /opt/hiclaw/agent/skills/coding-cli-management/scripts/detect-available-cli.sh
+```
+
+### Bundled CLI Tools
+
+The Manager image ships with:
+
+| Tool | Command | Notes |
+|------|---------|-------|
+| Claude Code | `claude` | Anthropic's CLI, requires `ANTHROPIC_API_KEY` or `claude auth login` |
+| Gemini CLI | `gemini` | Google's CLI, requires `GEMINI_API_KEY` or `gemini auth login` |
+| qodercli | `qodercli` | Optional; installed at build time (best-effort) |
+
+### Configuration File
+
+`~/manager-workspace/coding-cli-config.json`:
+
+```json
+{
+  "enabled": true,
+  "cli": "claude",
+  "detected_at": "2026-02-24T10:00:00+08:00"
+}
+```
+
+To disable delegation after enabling it, edit this file and set `"enabled": false`, or delete it to re-run detection on the next coding task.
+
+### coding-request: / coding-result: Protocol
+
+When Coding CLI Delegation is active, Workers communicate with the Manager using a structured message protocol:
+
+**Worker → Manager** (`coding-request:`):
+```
+coding-request: task-20260224-120000
+
+---PROMPT---
+Implement a REST endpoint POST /api/users that validates input and inserts into the database.
+See ~/hiclaw-fs/shared/tasks/task-20260224-120000/workspace/ for the existing codebase.
+---END---
+```
+
+**Manager → Worker** on success (`coding-result:`):
+```
+coding-result: task-20260224-120000
+
+The implementation is complete. Changes pushed to MinIO.
+Workspace: ~/hiclaw-fs/shared/tasks/task-20260224-120000/workspace/
+```
+
+**Manager → Worker** on failure (`coding-failed:`):
+```
+coding-failed: task-20260224-120000
+
+CLI exited with error. Prompt saved at:
+~/hiclaw-fs/shared/tasks/task-20260224-120000/coding-prompts/20260224-120005.txt
+```
+
+## YOLO Mode
+
+YOLO mode makes the Manager operate fully autonomously — it skips all interactive admin prompts and makes reasonable decisions on its own. Intended for CI/testing and automated workflows.
+
+### Activation
+
+Two ways to activate (either one is sufficient):
+
+```bash
+# Option 1: environment variable at container start
+docker run -e HICLAW_YOLO=1 ... hiclaw/manager-agent:latest
+
+# Option 2: touch a file in the workspace (takes effect immediately, no restart needed)
+docker exec hiclaw-manager touch /root/manager-workspace/yolo-mode
+```
+
+`make test` and `make replay` both enable YOLO mode automatically.
+
+### Behavior
+
+| Situation | Normal mode | YOLO mode |
+|-----------|-------------|-----------|
+| Coding CLI first-detection: tools found | Ask admin which tool to use | Auto-select first available (claude > gemini > qodercli) |
+| Coding CLI first-detection: no tools | Ask admin | Write `{"enabled":false}`, continue normally |
+| GitHub PAT not configured | Ask admin | Skip GitHub integration, note "GitHub not configured" |
+| Other decisions requiring confirmation | Prompt admin | Make the most reasonable choice, explain in message |
+
+YOLO mode does **not** affect security rules, Worker credential isolation, or human visibility of Agent communication.
