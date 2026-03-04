@@ -6,6 +6,40 @@ This file helps AI Agents (and human developers) quickly understand the project 
 
 HiClaw is an open-source Agent Teams system that uses IM (Matrix protocol) for multi-Agent collaboration with human-in-the-loop oversight. It consists of a Manager Agent (coordinator) and Worker Agents (task executors), connected via an AI Gateway (Higress), Matrix Homeserver (Tuwunel), and HTTP File System (MinIO).
 
+## Quick Commands Reference
+
+| Task | Command |
+|------|---------|
+| **Build all images** | `make build` |
+| **Build Manager only** | `make build-manager` |
+| **Build Worker only** | `make build-worker` |
+| **Run all tests** | `HICLAW_LLM_API_KEY=sk-xxx make test` |
+| **Run specific tests** | `make test TEST_FILTER="01 02"` |
+| **Quick smoke test** | `make test-quick` |
+| **Test without rebuild** | `make test SKIP_BUILD=1` |
+| **Test existing Manager** | `make test SKIP_INSTALL=1` |
+| **Install Manager** | `HICLAW_LLM_API_KEY=sk-xxx make install` |
+| **Uninstall** | `make uninstall` |
+| **Send task to Manager** | `make replay TASK="Create worker alice"` |
+| **Interactive task** | `make replay` |
+| **View replay log** | `make replay-log` |
+| **Push multi-arch** | `make push VERSION=0.1.0` |
+| **Clean local images** | `make clean` |
+| **Show all targets** | `make help` |
+
+### Running a Single Test
+
+```bash
+# Run test-01 only
+make test TEST_FILTER="01"
+
+# Run tests 01, 02, 03
+make test TEST_FILTER="01 02 03"
+
+# Run against existing installation (no container lifecycle)
+make test-installed TEST_FILTER="05"
+```
+
 ## Project Structure
 
 ```
@@ -59,6 +93,27 @@ hiclaw/
 - [.github/workflows/](/.github/workflows/) -- GitHub Actions workflows
 - [tests/](tests/) -- integration test suite
 
+### Available Integration Tests
+
+| Test | Description |
+|------|-------------|
+| `test-01-manager-boot.sh` | Manager container startup and service health |
+| `test-02-create-worker.sh` | Worker creation via Matrix |
+| `test-03-assign-task.sh` | Task assignment to Worker |
+| `test-04-human-intervene.sh` | Human intervention in Worker room |
+| `test-05-heartbeat.sh` | Manager heartbeat check |
+| `test-06-multi-worker.sh` | Multiple Workers collaboration |
+| `test-08-github-mcp.sh` | GitHub MCP Server integration |
+| `test-09-github-collab.sh` | GitHub collaboration workflow |
+| `test-10-mcp-permission.sh` | MCP permission control |
+| `test-11-github-pr-collab.sh` | GitHub PR collaboration |
+| `test-12-github-mcp-tools.sh` | GitHub MCP tools |
+| `test-13-git-delegation.sh` | Git delegation |
+
+Tests use shared libraries in `tests/lib/`:
+- `matrix-client.sh` — Matrix API wrapper (register, login, send, read messages)
+- `test-helpers.sh` — Common test utilities
+
 ### To modify Higress routing and initialization
 - [manager/scripts/init/setup-higress.sh](manager/scripts/init/setup-higress.sh) -- route, consumer, MCP server setup
 - [design/higress-console-api.yaml](design/higress-console-api.yaml) -- Higress Console API spec (OpenAPI 3.0)
@@ -94,3 +149,17 @@ All technical assumptions have been verified in POC. See [design/poc-tech-verifi
 - MCP Server created via `PUT` (not `POST`)
 - Auth plugin takes ~40s to activate after first configuration
 - OpenClaw Skills auto-load from `workspace/skills/<name>/SKILL.md`
+
+## Matrix Protocol Notes
+
+Workers are configured with `requireMention: true`. To trigger a Worker, messages **must** include `m.mentions`:
+
+```bash
+# Correct: Worker will respond
+curl -X PUT ".../rooms/${ROOM}/send/m.room.message/${TXN}" \
+  -d '{"msgtype":"m.text","body":"@alice do X","m.mentions":{"user_ids":["@alice:domain"]}}'
+
+# Wrong: Worker will ignore (no m.mentions)
+curl -X PUT ".../rooms/${ROOM}/send/m.room.message/${TXN}" \
+  -d '{"msgtype":"m.text","body":"@alice do X"}'
+```
